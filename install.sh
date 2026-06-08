@@ -25,7 +25,7 @@
 #   -h, --help        Show this help.
 #
 # Environment overrides:
-#   CLAUDE_SKELETON_REPO   (default: frederik/claude-skeleton)
+#   CLAUDE_SKELETON_REPO   (default: FrederikSuijs/claude-skeleton)
 #   CLAUDE_SKELETON_REF    (default: main)
 #   CLAUDE_SKELETON_TARBALL  Override the tarball URL entirely (useful for
 #                            local testing or private mirrors).
@@ -40,7 +40,7 @@
 
 set -euo pipefail
 
-REPO="${CLAUDE_SKELETON_REPO:-frederik/claude-skeleton}"
+REPO="${CLAUDE_SKELETON_REPO:-FrederikSuijs/claude-skeleton}"
 REF="${CLAUDE_SKELETON_REF:-main}"
 TARBALL_URL="${CLAUDE_SKELETON_TARBALL:-https://github.com/${REPO}/archive/${REF}.tar.gz}"
 
