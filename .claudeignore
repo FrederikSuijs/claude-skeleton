@@ -1,0 +1,458 @@
+# =============================================================================
+# .claudeignore — General-purpose LLM context filter
+#
+# Purpose: Tell Claude (and other LLM tools like claude-code) which files and
+#          folders to skip when reading your project for context.
+#
+# Philosophy: Different from .gitignore. The goal here is signal-to-noise.
+#   - EXCLUDE: dependency trees, generated code, binaries, build artifacts,
+#               large data files, lock files (usually noise at this scale),
+#               test snapshots, coverage reports, compiled assets.
+#   - KEEP:    source code, configs, manifests (package.json, pyproject.toml,
+#               go.mod, Cargo.toml), READMEs, docs, migrations, infra-as-code.
+#
+# Format: Same gitignore glob syntax. Lines starting with # are comments.
+#         Prefix with ! to un-ignore something a broader rule matched.
+# =============================================================================
+
+
+# =============================================================================
+# DEPENDENCY TREES
+# These are enormous, fully generated, and never signal anything about YOUR
+# code. The manifests (package.json, pyproject.toml, etc.) are kept.
+# =============================================================================
+
+# JavaScript / Node
+node_modules/
+jspm_packages/
+bower_components/
+.pnp/
+.pnp.js
+.yarn/cache/
+.yarn/unplugged/
+
+# Python
+site-packages/
+.venv/
+venv/
+env/
+__pypackages__/
+.tox/
+.nox/
+
+# Ruby
+vendor/bundle/
+
+# PHP
+vendor/
+
+# Java / Kotlin
+.gradle/
+.m2/
+
+# Go (if vendored)
+vendor/
+
+# Rust
+# (target/ handled under Build Artifacts below)
+
+
+# =============================================================================
+# BUILD ARTIFACTS & COMPILED OUTPUT
+# Generated from source; reading these adds no understanding of intent.
+# =============================================================================
+
+# Generic
+dist/
+build/
+out/
+target/
+bin/
+obj/
+release/
+debug/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+.eggs/
+*.pyd
+*.pyc
+sdist/
+wheels/
+
+# JavaScript / TypeScript
+*.tsbuildinfo
+.next/
+.nuxt/
+.output/
+.svelte-kit/
+.vite/
+.turbo/
+.parcel-cache/
+.cache/
+
+# .NET
+[Bb]in/
+[Oo]bj/
+*.dll
+*.exe
+*.pdb
+*.ilk
+*.nupkg
+
+# C / C++
+*.o
+*.a
+*.so
+*.dylib
+*.out
+*.elf
+*.hex
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+_deps/
+
+# Rust
+target/
+
+# Java
+*.class
+*.jar
+*.war
+*.ear
+
+
+# =============================================================================
+# LOCK FILES
+# Useful for humans reproducing builds; not useful for LLM code understanding.
+# Un-comment specific ones if you want Claude to reason about exact dep versions.
+# =============================================================================
+
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+# poetry.lock       # un-ignore if you want Claude to see exact Python versions
+# Cargo.lock        # un-ignore for binary projects (keep for libs)
+# Gemfile.lock
+# composer.lock
+# go.sum            # un-ignore if you want Claude to audit Go checksums
+# uv.lock
+
+
+# =============================================================================
+# TEST SNAPSHOTS, FIXTURES & GENERATED TEST DATA
+# Snapshot diffs and large fixtures obscure the actual test logic.
+# =============================================================================
+
+**/__snapshots__/
+**/*.snap
+**/fixtures/large/
+**/testdata/large/
+**/test-results/
+**/playwright-report/
+**/cypress/videos/
+**/cypress/screenshots/
+
+
+# =============================================================================
+# COVERAGE & PROFILING REPORTS
+# =============================================================================
+
+coverage/
+htmlcov/
+.coverage
+.coverage.*
+*.cover
+*.coveragexml
+.nyc_output/
+lcov.info
+*.lcov
+prof/
+*.prof
+*.profdata
+*.profraw
+
+
+# =============================================================================
+# MINIFIED & BUNDLED ASSETS
+# Unreadable by design. The source versions are what matter.
+# =============================================================================
+
+*.min.js
+*.min.css
+*.bundle.js
+*.bundle.css
+*.chunk.js
+*.map
+
+
+# =============================================================================
+# BINARY & MEDIA FILES
+# No text content to reason about.
+# =============================================================================
+
+# Images
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.tiff
+*.tif
+*.webp
+*.ico
+*.svg
+!src/**/*.svg    # un-ignore SVG source used as components/icons
+
+# Fonts
+*.woff
+*.woff2
+*.ttf
+*.otf
+*.eot
+
+# Audio / Video
+*.mp3
+*.mp4
+*.wav
+*.ogg
+*.webm
+*.avi
+*.mov
+*.mkv
+*.flac
+
+# Documents (binary)
+*.pdf
+*.doc
+*.docx
+*.xls
+*.xlsx
+*.ppt
+*.pptx
+
+# Archives / Packages
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.tar.bz2
+*.rar
+*.7z
+*.gz
+*.bz2
+*.xz
+*.dmg
+*.iso
+*.deb
+*.rpm
+*.apk
+*.ipa
+
+# Executables & objects
+*.exe
+*.bin
+*.so
+*.dylib
+*.dll
+*.lib
+*.out
+*.wasm
+
+# Database files
+*.sqlite
+*.sqlite3
+*.db
+*.mdb
+*.accdb
+
+# ML model weights (often gigabytes)
+*.pt
+*.pth
+*.ckpt
+*.pkl
+*.pickle
+*.h5
+*.hdf5
+*.safetensors
+*.onnx
+*.pb
+*.tflite
+*.bin         # also catches HF model shards
+*.gguf
+*.ggml
+
+
+# =============================================================================
+# LARGE DATA FILES
+# =============================================================================
+
+*.csv         # often large; un-ignore small reference CSVs if needed
+*.tsv
+*.parquet
+*.arrow
+*.feather
+*.jsonl       # can be huge; un-ignore if it's a small config/schema file
+*.ndjson
+*.avro
+data/
+datasets/
+*.dump
+*.sql
+
+
+# =============================================================================
+# LOGS & TEMPORARY FILES
+# =============================================================================
+
+*.log
+logs/
+log/
+tmp/
+temp/
+.tmp/
+*.tmp
+*.bak
+*.swp
+*.orig
+*.pid
+*.seed
+*.pid.lock
+pids/
+
+
+# =============================================================================
+# SECRETS & CREDENTIALS
+# These should never enter LLM context.
+# =============================================================================
+
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+*.pem
+*.key
+*.p12
+*.pfx
+*.cer
+*.crt
+id_rsa
+id_ed25519
+id_ecdsa
+*.pub
+.ssh/
+secrets.yml
+secrets.yaml
+secrets.json
+.secrets/
+*credentials*
+*secret*
+!*secret*.example
+!*secret*.template
+
+
+# =============================================================================
+# VERSION CONTROL & CI INTERNALS
+# =============================================================================
+
+.git/
+.svn/
+.hg/
+
+
+# =============================================================================
+# OS & EDITOR NOISE
+# =============================================================================
+
+.DS_Store
+Thumbs.db
+desktop.ini
+*~
+.directory
+
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.iml
+*.iws
+
+
+# =============================================================================
+# INFRASTRUCTURE STATE FILES
+# Contain sensitive resource IDs, IP addresses, and sometimes secrets.
+# Keep *.tf source; exclude state and sensitive var files.
+# =============================================================================
+
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl
+*.tfvars
+!*.tfvars.example
+crash.log
+
+# Ansible
+*.retry
+inventory/            # often contains hostnames/IPs
+group_vars/vault*     # encrypted vault files
+
+
+# =============================================================================
+# PACKAGE MANAGER CACHES & TOOLING INTERNALS
+# =============================================================================
+
+.npm/
+.pnpm-store/
+.pip/
+pip-wheel-metadata/
+.mypy_cache/
+.ruff_cache/
+.rpt2_cache/
+.eslintcache
+.stylelintcache
+.pytest_cache/
+.hypothesis/
+.pytype/
+.pyre/
+.dmypy.json
+
+
+# =============================================================================
+# GENERATED DOCUMENTATION
+# Usually compiled from source; source docs are more useful.
+# =============================================================================
+
+docs/_build/
+docs/build/
+site/
+_site/
+.docusaurus/
+.vuepress/dist/
+storybook-static/
+typedoc/
+
+
+# =============================================================================
+# JUPYTER
+# Output cells can contain enormous embedded images and data.
+# Keep .ipynb files but strip outputs with: nbstripout (recommended).
+# If you haven't stripped outputs, ignore notebooks entirely and un-comment:
+# *.ipynb
+# =============================================================================
+
+.ipynb_checkpoints/
+profile_default/
+ipython_config.py

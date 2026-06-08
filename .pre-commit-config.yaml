@@ -1,0 +1,29 @@
+repos:
+  # Local hook: pattern-based scanner vendored from github/awesome-copilot.
+  # Catches the well-known prefixes (ghp_, AKIA, sk_live_, etc.) with zero
+  # install cost. Zero deps — just bash, grep, file, git.
+  - repo: local
+    hooks:
+      - id: secrets-scanner
+        name: Secrets Scanner
+        entry: .githooks/secrets-scanner.sh
+        language: script
+        # The script's own defaults are SCAN_MODE=block and SCAN_SCOPE=staged,
+        # so no env overrides are needed here. Override per-invocation with:
+        #   SKIP_SECRETS_SCAN=true git commit ...
+        # or per-pattern allowlist via SECRETS_ALLOWLIST env var.
+
+  # Gitleaks: entropy + context-aware detection. Catches novel patterns the
+  # pattern-only scanner misses. Invoked as a local hook so we can pass the
+  # correct v8.30.x CLI args (the upstream manifest's entry uses removed
+  # flags). Requires the gitleaks binary on PATH (no Go toolchain needed).
+  # Install: brew install gitleaks
+  # Or download a release: https://github.com/gitleaks/gitleaks/releases
+  - repo: local
+    hooks:
+      - id: gitleaks
+        name: Detect hardcoded secrets (gitleaks)
+        description: Detect hardcoded secrets using Gitleaks (entropy + context-aware)
+        entry: bash -c 'gitleaks git --redact -v --log-opts="--cached --diff-filter=ACM"'
+        language: system
+        pass_filenames: false

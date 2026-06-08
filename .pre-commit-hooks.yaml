@@ -1,0 +1,5 @@
+- id: secrets-scanner
+  name: Secrets Scanner
+  description: Scan staged files for leaked secrets, credentials, and sensitive data
+  entry: .githooks/secrets-scanner.sh
+  language: script
