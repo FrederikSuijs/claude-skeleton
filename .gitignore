@@ -172,6 +172,7 @@ secrets.yaml
 secrets.json
 config/secrets.*
 .secrets/
+.claude/settings.local.json
 
 
 # =============================================================================
