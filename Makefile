@@ -30,6 +30,11 @@ RTK_BIN         := $(RTK_INSTALL_DIR)/rtk
 RTK_VERSION     ?= $(shell command -v curl >/dev/null 2>&1 && \
 	curl -fsSL https://api.github.com/repos/rtk-ai/rtk/releases/latest 2>/dev/null | \
 	awk -F'"' '/"tag_name":/ {print $$4; exit}' || echo latest)
+# Gitleaks release tag. Resolved via GitHub API at parse time; override with
+# 'make hooks GITLEAKS_VERSION=v8.30.1'. Strip the leading 'v' for the URL.
+GITLEAKS_VERSION ?= $(shell command -v curl >/dev/null 2>&1 && \
+	curl -fsSL https://api.github.com/repos/gitleaks/gitleaks/releases/latest 2>/dev/null | \
+	awk -F'"' '/"tag_name":/ {print $$4; exit}' || echo v8.30.1)
 # One of: claude-md (legacy), claude-code, cursor, global.
 # Only the legacy '--claude-md' flag is supported by current rtk releases;
 # the other targets are accepted as forward-compat no-ops.
@@ -50,6 +55,27 @@ else ifeq ($(UNAME_S),Windows_NT)
 else
   $(error Unsupported OS: $(UNAME_S). Install rtk manually: https://www.rtk-ai.app/)
 endif
+
+# Gitleaks release asset suffix. Maps 'uname -m' output to gitleaks's naming.
+UNAME_M := $(shell uname -m)
+ifeq ($(UNAME_S),Linux)
+  GITLEAKS_OS := linux
+else ifeq ($(UNAME_S),Darwin)
+  GITLEAKS_OS := darwin
+endif
+ifeq ($(UNAME_M),x86_64)
+  GITLEAKS_ARCH := x64
+else ifeq ($(UNAME_M),aarch64)
+  GITLEAKS_ARCH := arm64
+else ifeq ($(UNAME_M),arm64)
+  GITLEAKS_ARCH := arm64
+else ifeq ($(UNAME_M),armv6l)
+  GITLEAKS_ARCH := armv6
+else ifeq ($(UNAME_M),armv7l)
+  GITLEAKS_ARCH := armv7
+endif
+GITLEAKS_BIN := $(RTK_INSTALL_DIR)/gitleaks
+GITLEAKS_ASSET := gitleaks_$(GITLEAKS_VERSION:v%=%)_$(GITLEAKS_OS)_$(GITLEAKS_ARCH).tar.gz
 
 # Skills lockfile (manifest of upstream sources) and install directory.
 SKILLS_LOCK := skills-lock.json
@@ -92,19 +118,66 @@ init: ## Inject RTK instructions into CLAUDE.md (idempotent)
 	@$(RTK_BIN) init --$(RTK_INIT_TARGET)
 
 .PHONY: hooks
-hooks: ## Install pre-commit framework, verify gitleaks, register git hook
-	@command -v pre-commit >/dev/null 2>&1 || { \
-		echo "error: pre-commit not found." >&2; \
-		echo "       Install with: pipx install pre-commit" >&2; \
-		echo "       Or:           python3 -m pip install --user pre-commit" >&2; \
+hooks: ## Install pre-commit framework, install gitleaks if missing, register git hook
+	@if ! command -v pre-commit >/dev/null 2>&1; then \
+		echo "Installing pre-commit framework..."; \
+		if command -v uv >/dev/null 2>&1; then \
+			uv tool install pre-commit || { \
+				echo "error: 'uv tool install pre-commit' failed." >&2; \
+				exit 1; \
+			}; \
+		elif command -v pipx >/dev/null 2>&1; then \
+			pipx install pre-commit || { \
+				echo "error: 'pipx install pre-commit' failed." >&2; \
+				exit 1; \
+			}; \
+		elif command -v pip3 >/dev/null 2>&1; then \
+			pip3 install --user pre-commit || { \
+				echo "error: 'pip3 install --user pre-commit' failed." >&2; \
+				exit 1; \
+			}; \
+		else \
+			echo "error: no Python package manager found." >&2; \
+			echo "       Install one of: uv (https://docs.astral.sh/uv/), pipx, or pip3." >&2; \
+			exit 1; \
+		fi; \
+	fi
+	@if ! command -v pre-commit >/dev/null 2>&1; then \
+		echo "error: pre-commit still not on PATH after install." >&2; \
+		echo "       You may need a new shell for the 'uv tool' / 'pipx' PATH changes to take effect." >&2; \
 		exit 1; \
-	}
+	fi
 	@if ! command -v gitleaks >/dev/null 2>&1; then \
+		if [ -n "$(GITLEAKS_OS)" ] && [ -n "$(GITLEAKS_ARCH)" ]; then \
+			echo "Installing gitleaks $(GITLEAKS_VERSION) to $(RTK_INSTALL_DIR)..."; \
+			mkdir -p "$(RTK_INSTALL_DIR)"; \
+			tmpdir=$$(mktemp -d); \
+			trap 'rm -rf "$$tmpdir"' EXIT; \
+			url="https://github.com/gitleaks/gitleaks/releases/download/$(GITLEAKS_VERSION)/$(GITLEAKS_ASSET)"; \
+			if ! curl -fsSL -o "$$tmpdir/gitleaks.tgz" "$$url"; then \
+				echo "error: failed to download $$url" >&2; \
+				exit 1; \
+			fi; \
+			if ! tar -xzf "$$tmpdir/gitleaks.tgz" -C "$$tmpdir" gitleaks; then \
+				echo "error: failed to extract gitleaks from $$tmpdir/gitleaks.tgz" >&2; \
+				exit 1; \
+			fi; \
+			mv "$$tmpdir/gitleaks" "$(GITLEAKS_BIN)"; \
+			chmod +x "$(GITLEAKS_BIN)"; \
+			echo "gitleaks installed at $(GITLEAKS_BIN)"; \
+		else \
+			echo ""; \
+			echo "warning: gitleaks not found and this platform (UNAME_S=$(UNAME_S), UNAME_M=$(UNAME_M)) is not auto-installable."; \
+			echo "         The entropy layer of pre-commit will fail until it is installed."; \
+			echo "         Install with: brew install gitleaks (macOS)"; \
+			echo "         Or download:   https://github.com/gitleaks/gitleaks/releases"; \
+			echo ""; \
+		fi; \
+	fi
+	@if ! command -v gitleaks >/dev/null 2>&1 && [ ! -x "$(GITLEAKS_BIN)" ]; then \
 		echo ""; \
-		echo "warning: gitleaks not found on PATH."; \
-		echo "         The entropy layer of pre-commit will fail until it is installed."; \
-		echo "         Install with: brew install gitleaks"; \
-		echo "         Or download:   https://github.com/gitleaks/gitleaks/releases"; \
+		echo "warning: gitleaks still not on PATH."; \
+		echo "         Add $(RTK_INSTALL_DIR) to PATH (or re-run 'make hooks' after PATH is fixed)."; \
 		echo ""; \
 	fi
 	@echo "Installing pre-commit git hook..."

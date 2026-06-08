@@ -32,7 +32,7 @@ If you only want one piece:
 ```bash
 make install    # install rtk binary
 make init       # inject RTK instructions into CLAUDE.md
-make hooks      # install pre-commit framework + gitleaks check + git hook install
+make hooks      # install pre-commit framework, install gitleaks if missing, git hook install
 make skills     # fetch skills from skills-lock.json into .claude/skills/
 make graphify   # install the graphify CLI and register its skill
 make verify     # confirm rtk is on PATH and print its version
@@ -99,14 +99,30 @@ The two hooks graphify registers in `.claude/settings.json` fire on every Bash a
 
 If you'd rather not have the hooks, remove the `hooks` block from `.claude/settings.json` after `make graphify` finishes. The skill still works (you can still type `/graphify` and use the CLI manually); only the automatic nudging is lost.
 
+## Required tools
+
+Everything `make dev` needs to set up a working workspace, and where each tool comes from. **If you have a recent Linux/macOS box with `uv` or `pipx`, `make dev` will install everything for you.** No other prereqs.
+
+| Tool | Used for | Installed by | Auto? |
+|------|----------|--------------|-------|
+| `rtk` (Rust Token Killer) | Filters every Bash call Claude makes to ~10–20% of original output | `make install` | Yes — `curl … install.sh \| sh` |
+| `pre-commit` | Pre-commit framework that runs hooks on every `git commit` | `make hooks` | Yes — `uv tool` / `pipx` / `pip3 --user` |
+| `gitleaks` | Entropy + context-aware secrets detection in commits | `make hooks` | Yes — downloads release tarball to `~/.local/bin/gitleaks` (Linux x64/arm64/armv6/armv7, macOS x64/arm64). Manual: `brew install gitleaks` on other platforms. |
+| `graphify` | Knowledge-graph skill for the codebase (`/graphify`, `graphify query`) | `make graphify` | Yes — `uv tool` / `pipx` / `pip3 --user` (PyPI package: `graphifyy`) |
+| `caveman`, `find-skills` | Claude Code skills pinned in `skills-lock.json` | `make skills` (run as part of `make dev` via `skills-verify`) | Yes — fetched from upstream GitHub |
+| `uv` **or** `pipx` **or** `pip3` | Python package manager used to install `pre-commit` and `graphify` | (you) | **No — install at least one before `make dev`.** Recommended: [`uv`](https://docs.astral.sh/uv/) (single static binary, fastest). |
+| `curl` | Downloading RTK, gitleaks, and skill files from GitHub | (you) | **No — install before `make dev`.** Pre-installed on most macOS and Linux distros. |
+
+The `make dev` target runs `install → init → hooks → graphify → skills-verify → verify` in that order. Each step auto-installs what it can and errors clearly when it can't. Re-run `make dev` any time; it's idempotent.
+
 ## Secrets scanning (pre-commit)
 
 `.pre-commit-config.yaml` runs two layers on every `git commit` — for **any** committer (human, Claude Code, CI, anything):
 
 1. `.githooks/secrets-scanner.sh` — local pattern-based scanner, 20+ pattern categories (AWS, GitHub PATs, private keys, Stripe, Slack, JWTs, etc.). Zero install cost.
-2. `gitleaks` — entropy + context-aware detection with a maintained ruleset. Needs the binary on PATH (`brew install gitleaks`).
+2. `gitleaks` — entropy + context-aware detection with a maintained ruleset. Auto-installed to `~/.local/bin/gitleaks` by `make hooks` on first run (Linux x64/arm64, macOS x64/arm64). For other platforms, install manually: `brew install gitleaks` (macOS) or download from [the gitleaks releases](https://github.com/gitleaks/gitleaks/releases).
 
-`make hooks` installs the pre-commit framework, verifies gitleaks, and registers the git hook. To bypass for a single commit:
+`make hooks` auto-installs the `pre-commit` framework and `gitleaks` (if they're not on PATH), then registers the git hook. To bypass for a single commit:
 
 ```bash
 SKIP_SECRETS_SCAN=true git commit -m "add fixture with fake key"
