@@ -2,7 +2,7 @@
 # install.sh — one-liner installer for the claude-skeleton template.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/frederik/claude-skeleton/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/FrederikSuijs/claude-skeleton/main/install.sh | sh
 #   curl -fsSL ... | sh -s -- check
 #   curl -fsSL ... | sh -s -- setup --no-tools
 #   curl -fsSL ... | sh -s -- --help

@@ -63,10 +63,10 @@ Skip the clone — drop `claude-skeleton` straight into any directory (empty or 
 
 ```bash
 # Full setup in the current directory (mirror of `make dev`)
-curl -fsSL https://raw.githubusercontent.com/frederik/claude-skeleton/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/FrederikSuijs/claude-skeleton/main/install.sh | sh
 
 # Diagnose an existing setup
-curl -fsSL https://raw.githubusercontent.com/frederik/claude-skeleton/main/install.sh | sh -s -- check
+curl -fsSL https://raw.githubusercontent.com/FrederikSuijs/claude-skeleton/main/install.sh | sh -s -- check
 ```
 
 The installer fetches the template as a tarball, drops the relevant files into the current directory (no-clobber by default), and runs `make -f claude.mk dev`. The Makefile content is **always** installed as `claude.mk` to avoid clobbering a project's existing `Makefile`. A 1-line `Makefile` stub (`include claude.mk`) is also dropped, but skipped automatically if `Makefile` already exists.
