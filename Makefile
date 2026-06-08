@@ -1,24 +1,35 @@
 # claude-skeleton — workspace setup
 #
 # Wraps RTK (Rust Token Killer) so a fresh checkout has a token-optimized
-# shell on PATH and a PreToolUse hook that rewrites Claude Code's Bash calls.
+# shell on PATH, and wires the pre-commit secrets-scanning hooks so every
+# commit (human or agent) is scanned before it lands.
 #
 # Usage:
-#   make help     # list targets
-#   make dev      # full workspace setup: install + PATH check + init hook
-#   make install  # install rtk binary only (idempotent)
-#   make init     # register PreToolUse hook in .claude/settings.json
-#   make verify   # confirm rtk is on PATH and report version
-#   make gain     # show token-savings dashboard
-#   make path     # print the shell snippet to add ~/.local/bin to PATH
-#   make clean    # remove the rtk binary
+#   make help           # list targets
+#   make dev            # full workspace setup: rtk + skills + graphify + pre-commit + verify
+#   make install        # install rtk binary only (idempotent)
+#   make init           # inject RTK instructions into CLAUDE.md (idempotent)
+#   make hooks          # install pre-commit framework + gitleaks + git hook
+#   make hooks-baseline # generate gitleaks baseline for repos with history
+#   make skills         # fetch skills from skills-lock.json into .claude/skills/
+#   make skills-verify  # confirm in-tree skills match skills-lock.json
+#   make graphify       # install the graphify CLI and register its skill
+#   make lint           # run pre-commit against all files
+#   make verify         # confirm rtk is on PATH and report version
+#   make gain           # show token-savings dashboard
+#   make path           # print the shell snippet to add ~/.local/bin to PATH
+#   make clean          # remove the rtk binary
 
 # ---- configuration ----------------------------------------------------------
 
 # Override with: make install RTK_INSTALL_DIR=/usr/local/bin
 RTK_INSTALL_DIR ?= $(HOME)/.local/bin
 RTK_BIN         := $(RTK_INSTALL_DIR)/rtk
-RTK_VERSION     ?= latest
+# 'latest' is resolved to the actual release tag at parse time. Override
+# with: make install RTK_VERSION=v0.42.3  (or any tag from the GitHub API).
+RTK_VERSION     ?= $(shell command -v curl >/dev/null 2>&1 && \
+	curl -fsSL https://api.github.com/repos/rtk-ai/rtk/releases/latest 2>/dev/null | \
+	awk -F'"' '/"tag_name":/ {print $$4; exit}' || echo latest)
 # One of: claude-md (legacy), claude-code, cursor, global.
 # Only the legacy '--claude-md' flag is supported by current rtk releases;
 # the other targets are accepted as forward-compat no-ops.
@@ -28,14 +39,21 @@ RTK_INIT_TARGET ?= claude-md
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Linux)
   RTK_INSTALL_CMD := curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh
+  SHA256_CMD      := sha256sum
 else ifeq ($(UNAME_S),Darwin)
   RTK_INSTALL_CMD := curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh
+  SHA256_CMD      := shasum -a 256
 else ifeq ($(UNAME_S),Windows_NT)
   # Git-Bash / WSL on Windows. Adjust if you have a different shell.
   RTK_INSTALL_CMD := curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh
+  SHA256_CMD      := sha256sum
 else
   $(error Unsupported OS: $(UNAME_S). Install rtk manually: https://www.rtk-ai.app/)
 endif
+
+# Skills lockfile (manifest of upstream sources) and install directory.
+SKILLS_LOCK := skills-lock.json
+SKILLS_DIR  := .claude/skills
 
 # ---- targets ----------------------------------------------------------------
 
@@ -44,7 +62,7 @@ help: ## Show this help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 .PHONY: dev
-dev: install init verify ## Full workspace setup: install rtk, wire init hook, verify
+dev: install init hooks graphify skills-verify verify ## Full workspace setup: rtk, skills, graphify, pre-commit hooks, verify
 
 .PHONY: install
 install: ## Install rtk to $(RTK_INSTALL_DIR) (idempotent)
@@ -72,6 +90,173 @@ init: ## Inject RTK instructions into CLAUDE.md (idempotent)
 	esac
 	@echo "Running rtk init --$(RTK_INIT_TARGET)..."
 	@$(RTK_BIN) init --$(RTK_INIT_TARGET)
+
+.PHONY: hooks
+hooks: ## Install pre-commit framework, verify gitleaks, register git hook
+	@command -v pre-commit >/dev/null 2>&1 || { \
+		echo "error: pre-commit not found." >&2; \
+		echo "       Install with: pipx install pre-commit" >&2; \
+		echo "       Or:           python3 -m pip install --user pre-commit" >&2; \
+		exit 1; \
+	}
+	@if ! command -v gitleaks >/dev/null 2>&1; then \
+		echo ""; \
+		echo "warning: gitleaks not found on PATH."; \
+		echo "         The entropy layer of pre-commit will fail until it is installed."; \
+		echo "         Install with: brew install gitleaks"; \
+		echo "         Or download:   https://github.com/gitleaks/gitleaks/releases"; \
+		echo ""; \
+	fi
+	@echo "Installing pre-commit git hook..."
+	@pre-commit install
+	@echo ""
+	@echo "Pre-commit hooks installed. To verify against the whole repo: make lint"
+
+.PHONY: hooks-baseline
+hooks-baseline: ## Generate a gitleaks baseline for repos with existing history
+	@command -v gitleaks >/dev/null 2>&1 || { \
+		echo "error: gitleaks not found." >&2; \
+		echo "       Install with: brew install gitleaks" >&2; \
+		exit 1; \
+	}
+	@if [ -f .gitleaks-baseline.json ]; then \
+		echo "error: .gitleaks-baseline.json already exists. Delete it first to regenerate." >&2; \
+		exit 1; \
+	fi
+	@echo "Generating gitleaks baseline from full history..."
+	@gitleaks detect --baseline-path .gitleaks-baseline.json --redact
+	@echo ""
+	@echo "Baseline written to .gitleaks-baseline.json. Commit it."
+
+.PHONY: skills
+skills: ## Fetch skills from $(SKILLS_LOCK) into $(SKILLS_DIR) and update hashes
+	@set -e; \
+	command -v curl >/dev/null 2>&1 || { \
+		echo "error: curl not found. Install curl or run 'make skills' on a machine that has it." >&2; \
+		exit 1; \
+	}; \
+	command -v jq >/dev/null 2>&1 || { \
+		echo "error: jq not found." >&2; \
+		echo "       Install with: brew install jq (macOS) or apt install jq (Debian/Ubuntu)" >&2; \
+		exit 1; \
+	}; \
+	if [ ! -f "$(SKILLS_LOCK)" ]; then \
+		echo "no $(SKILLS_LOCK) found, nothing to do"; \
+		exit 0; \
+	fi; \
+	version=$$(jq -r '.version' "$(SKILLS_LOCK)"); \
+	if [ "$$version" != "1" ]; then \
+		echo "error: unsupported $(SKILLS_LOCK) version: $$version (expected 1)" >&2; \
+		exit 1; \
+	fi; \
+	tmpdir=$$(mktemp -d); \
+	trap 'rm -rf "$$tmpdir"' EXIT; \
+	jq -r '.skills | keys[]' "$(SKILLS_LOCK)" > "$$tmpdir/keys"; \
+	while read -r name; do \
+		source=$$(jq -r ".skills[\"$$name\"].source"     "$(SKILLS_LOCK)"); \
+		skillpath=$$(jq -r ".skills[\"$$name\"].skillPath" "$(SKILLS_LOCK)"); \
+		dest="$(SKILLS_DIR)/$$name/SKILL.md"; \
+		mkdir -p "$(SKILLS_DIR)/$$name"; \
+		url="https://raw.githubusercontent.com/$$source/main/$$skillpath"; \
+		if ! curl -fsSL -o "$$dest.tmp" "$$url"; then \
+			url="https://raw.githubusercontent.com/$$source/master/$$skillpath"; \
+			if ! curl -fsSL -o "$$dest.tmp" "$$url"; then \
+				echo "error: failed to fetch $$name from $$url" >&2; \
+				rm -f "$$dest.tmp"; \
+				exit 1; \
+			fi; \
+		fi; \
+		mv "$$dest.tmp" "$$dest"; \
+		hash=$$($(SHA256_CMD) "$$dest" | awk '{print $$1}'); \
+		jq --arg n "$$name" --arg h "$$hash" '.skills[$$n].computedHash = $$h' "$(SKILLS_LOCK)" > "$$tmpdir/lock.tmp" && mv "$$tmpdir/lock.tmp" "$(SKILLS_LOCK)"; \
+		printf '  %-15s fetched from %s (sha256:%s)\n' "$$name" "$$source" "$$hash"; \
+	done < "$$tmpdir/keys"; \
+	echo ""; \
+	echo "Skills synced. Run 'make skills-verify' to confirm."
+
+.PHONY: skills-verify
+skills-verify: ## Confirm in-tree skills match the hashes in $(SKILLS_LOCK)
+	@set -e; \
+	command -v jq >/dev/null 2>&1 || { \
+		echo "error: jq not found." >&2; \
+		echo "       Install with: brew install jq (macOS) or apt install jq (Debian/Ubuntu)" >&2; \
+		exit 1; \
+	}; \
+	if [ ! -f "$(SKILLS_LOCK)" ]; then \
+		echo "no $(SKILLS_LOCK) found, nothing to verify"; \
+		exit 0; \
+	fi; \
+	tmpdir=$$(mktemp -d); \
+	trap 'rm -rf "$$tmpdir"' EXIT; \
+	jq -r '.skills | keys[]' "$(SKILLS_LOCK)" > "$$tmpdir/keys"; \
+	fail=0; \
+	total=0; \
+	while read -r name; do \
+		expected=$$(jq -r ".skills[\"$$name\"].computedHash" "$(SKILLS_LOCK)"); \
+		dest="$(SKILLS_DIR)/$$name/SKILL.md"; \
+		total=$$((total + 1)); \
+		if [ ! -f "$$dest" ]; then \
+			echo "  $$name: SKILL.md MISSING (run 'make skills')"; \
+			fail=$$((fail + 1)); \
+			continue; \
+		fi; \
+		actual=$$($(SHA256_CMD) "$$dest" | awk '{print $$1}'); \
+		if [ "$$expected" != "$$actual" ]; then \
+			echo "  $$name: MISMATCH (expected $$expected, got $$actual)"; \
+			fail=$$((fail + 1)); \
+		else \
+			echo "  $$name: OK"; \
+		fi; \
+	done < "$$tmpdir/keys"; \
+	if [ "$$fail" -gt 0 ]; then \
+		echo ""; \
+		echo "drift detected: $$fail of $$total skills failed verification"; \
+		exit 1; \
+	fi; \
+	echo "verified $$total skills ok"
+
+.PHONY: graphify
+graphify: ## Install the graphify CLI (PyPI: graphifyy) and register its skill
+	@if command -v graphify >/dev/null 2>&1; then \
+		echo "graphify already on PATH, skipping install"; \
+	else \
+		echo "Installing graphify CLI (PyPI package: graphifyy)..."; \
+		if command -v uv >/dev/null 2>&1; then \
+			uv tool install graphifyy || { \
+				echo "error: 'uv tool install graphifyy' failed." >&2; \
+				exit 1; \
+			}; \
+		elif command -v pipx >/dev/null 2>&1; then \
+			pipx install graphifyy || { \
+				echo "error: 'pipx install graphifyy' failed." >&2; \
+				exit 1; \
+			}; \
+		elif command -v pip3 >/dev/null 2>&1; then \
+			pip3 install --user graphifyy || { \
+				echo "error: 'pip3 install --user graphifyy' failed." >&2; \
+				exit 1; \
+			}; \
+		else \
+			echo "error: no Python package manager found." >&2; \
+			echo "       Install one of: uv (https://docs.astral.sh/uv/), pipx, or pip3." >&2; \
+			exit 1; \
+		fi; \
+	fi
+	@if ! command -v graphify >/dev/null 2>&1; then \
+		echo "error: graphify still not on PATH after install." >&2; \
+		echo "       You may need a new shell for the 'uv tool' / 'pipx' PATH changes to take effect." >&2; \
+		exit 1; \
+	fi
+	@echo "Registering graphify skill into .claude/skills/..."
+	@graphify install --project
+
+.PHONY: lint
+lint: ## Run pre-commit against all files in the repo
+	@command -v pre-commit >/dev/null 2>&1 || { \
+		echo "error: pre-commit not found. Run 'make hooks' first." >&2; \
+		exit 1; \
+	}
+	@pre-commit run --all-files
 
 .PHONY: verify
 verify: ## Confirm rtk is on PATH and report version

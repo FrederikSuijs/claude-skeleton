@@ -1,22 +1,28 @@
 # claude-skeleton
 
-Opinionated starter template for LLM-assisted projects. Pre-configured `CLAUDE.md` with scoped context, lean token hygiene, MCP plugin stubs, and agent task scaffolding. Drop in, vibe code. Stop re-solving the same Claude setup every project.
+Opinionated starter template for LLM-assisted projects. Pre-configured `CLAUDE.md` with scoped context, lean token hygiene, RTK (Rust Token Killer) wired through Make, a two-layer secrets-scanning pre-commit setup, MCP server stubs, agent task scaffolding, and an `.env.example` for safe local config. Drop in, vibe code. Stop re-solving the same Claude setup every project.
 
 ## What's inside
 
 | Path | Purpose |
 |------|---------|
-| `CLAUDE.md` | Behavioral guidelines for Claude (think first, simplify, surgical changes, goal-driven) plus the full RTK (Rust Token Killer) command reference. |
-| `.claude/` | Project-local Claude Code configuration (settings, hooks). |
-| `.rtk/` | RTK state directory. |
-| `skills-lock.json` | Pinned versions of installed skills (e.g. `caveman`, `find-skills`) for reproducible installs. |
+| `CLAUDE.md` | Behavioral guidelines for Claude (think first, simplify, surgical changes, goal-driven) plus the RTK (Rust Token Killer) command reference. |
+| `.claude/` | Project-local Claude Code configuration (settings, skills). |
+| `.claude/skills/` | Pinned skills (`caveman`, `find-skills`), fetched from upstream on `make dev` and verified against `skills-lock.json`. Plus `graphify/` (installed by `make graphify`). |
+| `.rtk/` | RTK state directory + a starter `filters.toml` for project-local overrides. |
+| `skills-lock.json` | Lockfile of skill sources, treated like `package.json`: `make skills` fetches, `make skills-verify` checks. |
+| `.mcp/` | Stub MCP servers. `example-server/` is a runnable Python reference; copy it to add real servers. |
+| `tasks/` | Agent task scaffolding. `TEMPLATE.md` is the spec format; copy it to author a new task. |
+| `.pre-commit-config.yaml` | Two-layer secrets scan: pattern-based `secrets-scanner` + `gitleaks` (entropy/context). |
+| `.githooks/secrets-scanner.sh` | Local pattern scanner, vendored from `github/awesome-copilot`. |
+| `.env.example` | Template for local secrets — copy to `.env` (gitignored) and fill in real values. |
 | `.gitignore` | General-purpose ignores covering Python, Node, Go, Rust, JVM, .NET, C/C++, Ruby, PHP, Docker, Terraform, and common editors/OSes. |
-| `Makefile` | Workspace setup — installs RTK, registers the PreToolUse hook, and verifies the toolchain. |
+| `Makefile` | Workspace setup — installs RTK, fetches skills, installs graphify, installs pre-commit hooks, and verifies the toolchain. Targets: `make skills`, `make skills-verify`, `make graphify`. |
 
 ## Quick start
 
 ```bash
-make dev        # install rtk, wire the Claude Code hook, verify
+make dev        # install rtk, fetch skills, install graphify, install pre-commit hooks, verify
 ```
 
 That target is idempotent — re-run it any time and it skips steps that are already done.
@@ -25,9 +31,13 @@ If you only want one piece:
 
 ```bash
 make install    # install rtk binary
-make init       # register the PreToolUse hook (RTK_INIT_TARGET=claude-code|cursor|global)
+make init       # inject RTK instructions into CLAUDE.md
+make hooks      # install pre-commit framework + gitleaks check + git hook install
+make skills     # fetch skills from skills-lock.json into .claude/skills/
+make graphify   # install the graphify CLI and register its skill
 make verify     # confirm rtk is on PATH and print its version
 make gain       # token-savings dashboard
+make lint       # run pre-commit against the whole repo
 ```
 
 `make help` lists every target with a one-liner.
@@ -63,9 +73,54 @@ The `CLAUDE.md` shipped in this repo already instructs Claude to prefix every Ba
 
 To check your actual savings over time: `make gain` (or `rtk gain --history`).
 
+## Graphify (knowledge graph for the codebase)
+
+`make graphify` installs the [`graphify`](https://github.com/safishamsi/graphify) CLI (PyPI package: `graphifyy`) and registers its skill into `.claude/skills/graphify/`. The skill turns the codebase into a queryable knowledge graph — type `/graphify` in Claude Code to index the repo, then ask questions like "where is X defined?" or "what calls Y?" via `graphify query "<question>"`.
+
+### What it writes
+
+Running `make graphify` (or `make dev`, which calls it) mutates the working tree:
+
+| Path | Change | Commit? |
+|------|--------|---------|
+| `.claude/skills/graphify/SKILL.md` | New (the skill body) | Yes |
+| `.claude/skills/graphify/references/` | New (skill sidecar docs) | Yes |
+| `.claude/CLAUDE.md` | New (routing hint: "when the user types `/graphify`, invoke the Skill tool") | Yes |
+| `CLAUDE.md` | Appends a `## graphify` section with rules for the agent | Yes |
+| `.claude/settings.json` | Adds two `PreToolUse` hooks (Bash + Read/Glob) that suggest `graphify query` instead of raw grep/read | Yes |
+
+### About the PreToolUse hooks
+
+The two hooks graphify registers in `.claude/settings.json` fire on every Bash and every Read/Glob call. Each runs a `python3 -c` snippet to decide whether to inject a "use graphify instead" hint into the agent's context. This means:
+
+- **Every Bash call has a small per-invocation overhead** (the python3 check runs before RTK wrapping).
+- **The agent is nudged toward `graphify query`** for codebase questions instead of reading files or grepping.
+- **The hooks do nothing until you run `graphify build` first** — they check for `graphify-out/graph.json` and only inject the hint if the graph exists.
+
+If you'd rather not have the hooks, remove the `hooks` block from `.claude/settings.json` after `make graphify` finishes. The skill still works (you can still type `/graphify` and use the CLI manually); only the automatic nudging is lost.
+
+## Secrets scanning (pre-commit)
+
+`.pre-commit-config.yaml` runs two layers on every `git commit` — for **any** committer (human, Claude Code, CI, anything):
+
+1. `.githooks/secrets-scanner.sh` — local pattern-based scanner, 20+ pattern categories (AWS, GitHub PATs, private keys, Stripe, Slack, JWTs, etc.). Zero install cost.
+2. `gitleaks` — entropy + context-aware detection with a maintained ruleset. Needs the binary on PATH (`brew install gitleaks`).
+
+`make hooks` installs the pre-commit framework, verifies gitleaks, and registers the git hook. To bypass for a single commit:
+
+```bash
+SKIP_SECRETS_SCAN=true git commit -m "add fixture with fake key"
+# or skip all pre-commit hooks:
+git commit --no-verify -m "..."
+```
+
+See [`.githooks/README.md`](./.githooks/README.md) for the full reference.
+
 ## Project-specific instructions
 
 Add a second `## Project` section to `CLAUDE.md` (or a separate `CLAUDE.local.md` if you prefer not to commit project guidance) covering the bits that aren't derivable from the code: deployment targets, owned services, on-call rotation, etc. Keep it short — every line is loaded into context.
+
+For per-project environment variables, copy `.env.example` to `.env` (which is gitignored) and fill in real values.
 
 ## License
 

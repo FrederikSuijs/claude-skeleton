@@ -112,6 +112,16 @@ Gitleaks uses a `.gitleaks.toml` config for fine-grained allowlisting
 
 ## One-time setup
 
+The Makefile wraps all of this — from the repo root, just run:
+
+```bash
+make dev        # or, for hooks only: make hooks
+```
+
+That target verifies the `pre-commit` framework is installed, warns if
+`gitleaks` is missing, and runs `pre-commit install` to register the
+git hook. If you'd rather do it by hand:
+
 ```bash
 # 1. Install pre-commit framework
 brew install pre-commit            # macOS
@@ -124,7 +134,7 @@ brew install gitleaks
 pre-commit install
 
 # 4. (Optional) Run against all files once to verify nothing is flagged
-pre-commit run --all-files
+make lint        # or: pre-commit run --all-files
 ```
 
 After this, every `git commit` — by you, by Claude Code, by anything —
